@@ -15,17 +15,25 @@ static bool showAddPopup = false;
 static char nameInp[100] = {0}, pctInp[32] = {0}, startInp[32] = {0}, endInp[32] = {0};
 static float scrollOffset = 0.0f;
 static std::string statusMsg = ""; static float statusTimer = 0.0f;
+static int activeField = 0; // 1=name, 2=pct, 3=start, 4=end
 
 static void reload() { discounts = getAllDiscounts(); }
 static void setStatus(const char* m, bool ok) { statusMsg = m; statusTimer = ok ? 2.5f : 3.0f; }
 
-void InitDiscountsPanel() { reload(); showAddPopup = false; memset(nameInp, 0, sizeof(nameInp)); memset(pctInp, 0, sizeof(pctInp)); memset(startInp, 0, sizeof(startInp)); memset(endInp, 0, sizeof(endInp)); scrollOffset = 0.0f; statusMsg = ""; statusTimer = 0.0f; }
+void InitDiscountsPanel() {
+    reload(); showAddPopup = false;
+    memset(nameInp, 0, sizeof(nameInp)); memset(pctInp, 0, sizeof(pctInp));
+    memset(startInp, 0, sizeof(startInp)); memset(endInp, 0, sizeof(endInp));
+    scrollOffset = 0.0f; statusMsg = ""; statusTimer = 0.0f; activeField = 0;
+}
 
 void DrawDiscountsPanel() {
     float px = (float)CONTENT_X + 20, py = (float)CONTENT_Y + 20, pw = (float)CONTENT_W - 40, ph = (float)CONTENT_H - 40;
     DrawText("DISCOUNTS", (int)px, (int)py, FONT_SIZE_LARGE, COL_DARK);
     if (DrawButton({px + pw - 160, py - 5, 150, 36}, "+ Add Discount", COL_ACCENT, COL_WHITE)) {
-        memset(nameInp, 0, sizeof(nameInp)); memset(pctInp, 0, sizeof(pctInp)); memset(startInp, 0, sizeof(startInp)); memset(endInp, 0, sizeof(endInp));
+        memset(nameInp, 0, sizeof(nameInp)); memset(pctInp, 0, sizeof(pctInp));
+        memset(startInp, 0, sizeof(startInp)); memset(endInp, 0, sizeof(endInp));
+        activeField = 1;
         showAddPopup = true;
     }
 
@@ -48,20 +56,58 @@ void DrawDiscountsPanel() {
 
     if (statusTimer > 0) DrawNotification(statusMsg, statusMsg.find("Error") != std::string::npos ? COL_LOW_STOCK : COL_COMPLETED, statusTimer);
 
+    // ==================== ADD POPUP ====================
     if (showAddPopup) {
         DrawPopupOverlay();
-        float pw2 = 450, ph2 = 320, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
+        float pw2 = 480, ph2 = 340, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
         DrawCard({px2, py2, pw2, ph2}, "Add Discount", COL_CARD);
+
         float ix = px2 + 30, iy = py2 + 55;
-        DrawText("Name:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); DrawInput({ix + 150, iy - 5, 240, 36}, "", nameInp, 99, true, false); iy += 50;
-        DrawText("Percentage:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); DrawInput({ix + 150, iy - 5, 240, 36}, "", pctInp, 31, true, false); iy += 50;
-        DrawText("Start Date:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); DrawInput({ix + 150, iy - 5, 240, 36}, "YYYY-MM-DD", startInp, 31, true, false); iy += 50;
-        DrawText("End Date:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); DrawInput({ix + 150, iy - 5, 240, 36}, "YYYY-MM-DD", endInp, 31, true, false);
-        if (DrawButton({px2 + 30, py2 + ph2 - 55, 120, 36}, "Save", COL_ACCENT, COL_WHITE)) {
-            bool ok = addDiscount(nameInp, atof(pctInp), startInp, endInp);
-            setStatus(ok ? "Discount added" : "Error", ok); reload(); showAddPopup = false;
+        Vector2 mouse = GetMousePosition();
+
+        // Name
+        DrawText("Name:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle nameRect = {ix + 150, iy - 5, 260, 36};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, nameRect)) activeField = 1;
+        DrawInput(nameRect, "", nameInp, 99, activeField == 1, false);
+        iy += 50;
+
+        // Percentage
+        DrawText("Percentage:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle pctRect = {ix + 150, iy - 5, 260, 36};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, pctRect)) activeField = 2;
+        DrawInput(pctRect, "", pctInp, 31, activeField == 2, false);
+        iy += 50;
+
+        // Start Date
+        DrawText("Start Date:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle startRect = {ix + 150, iy - 5, 260, 36};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, startRect)) activeField = 3;
+        DrawInput(startRect, "YYYY-MM-DD", startInp, 31, activeField == 3, false);
+        iy += 50;
+
+        // End Date
+        DrawText("End Date:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle endRect = {ix + 150, iy - 5, 260, 36};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, endRect)) activeField = 4;
+        DrawInput(endRect, "YYYY-MM-DD", endInp, 31, activeField == 4, false);
+
+        // Keyboard
+        if (IsKeyPressed(KEY_TAB)) activeField = (activeField % 4) + 1;
+        if (IsKeyPressed(KEY_ESCAPE)) { showAddPopup = false; activeField = 0; }
+
+        // Buttons
+        float btnY = py2 + ph2 - 55;
+        if (DrawButton({px2 + 30, btnY, 120, 36}, "Save", COL_ACCENT, COL_WHITE) || IsKeyPressed(KEY_ENTER)) {
+            if (strlen(nameInp) > 0 && strlen(pctInp) > 0) {
+                bool ok = addDiscount(nameInp, atof(pctInp), startInp, endInp);
+                setStatus(ok ? "Discount added" : "Error", ok);
+                reload();
+                showAddPopup = false; activeField = 0;
+            }
         }
-        if (DrawButton({px2 + pw2 - 150, py2 + ph2 - 55, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) showAddPopup = false;
-        if (IsKeyPressed(KEY_ESCAPE)) showAddPopup = false;
+        if (DrawButton({px2 + pw2 - 150, btnY, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) {
+            showAddPopup = false; activeField = 0;
+        }
     }
 }

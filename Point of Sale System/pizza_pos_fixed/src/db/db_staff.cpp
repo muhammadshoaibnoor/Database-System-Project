@@ -73,7 +73,7 @@ std::vector<Employee> getKitchenStaffByBranch(int branchId) {
     std::vector<Employee> all = getAllEmployees(branchId);
     std::vector<Employee> kitchen;
     for (const auto& e : all) {
-        if (e.role == "Kitchen Staff" && e.isActive) {
+        if (e.role == "KitchenStaff" && e.isActive) {
             kitchen.push_back(e);
         }
     }
@@ -87,16 +87,20 @@ bool addEmployee(const std::string& username, const std::string& managedBy,
     MYSQL* conn = getConn();
     if (!conn) return false;
 
+    std::string emailVal = email.empty() ? "NULL" : escapeStr(email);
+    std::string phoneVal = phone.empty() ? "NULL" : escapeStr(phone);
+    std::string managedVal = managedBy.empty() ? "NULL" : escapeStr(managedBy);
+
     std::string sql =
         "INSERT INTO EMPLOYEE (UserName, ManagedBy, BranchId, FirstName, LastName, "
         "Email, PhoneNumber, Password, Role, IsActive, HireDate) VALUES (" +
         escapeStr(username) + ", " +
-        escapeStr(managedBy) + ", " +
+        managedVal + ", " +
         std::to_string(branchId) + ", " +
         escapeStr(firstName) + ", " +
         escapeStr(lastName) + ", " +
-        escapeStr(email) + ", " +
-        escapeStr(phone) + ", " +
+        emailVal + ", " +
+        phoneVal + ", " +
         escapeStr(password) + ", " +
         escapeStr(role) + ", 1, CURDATE())";
 
@@ -109,12 +113,15 @@ bool updateEmployee(const std::string& username, const std::string& firstName,
     MYSQL* conn = getConn();
     if (!conn) return false;
 
+    std::string emailVal = email.empty() ? "NULL" : escapeStr(email);
+    std::string phoneVal = phone.empty() ? "NULL" : escapeStr(phone);
+
     std::string sql =
         "UPDATE EMPLOYEE SET "
         "FirstName = " + escapeStr(firstName) + ", "
         "LastName = " + escapeStr(lastName) + ", "
-        "Email = " + escapeStr(email) + ", "
-        "PhoneNumber = " + escapeStr(phone) + ", "
+        "Email = " + emailVal + ", "
+        "PhoneNumber = " + phoneVal + ", "
         "Role = " + escapeStr(role) + ", "
         "BranchId = " + std::to_string(branchId) + " "
         "WHERE UserName = " + escapeStr(username);

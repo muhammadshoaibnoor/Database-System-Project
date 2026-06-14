@@ -10,8 +10,6 @@
 
 using namespace DB;
 
-// ==================== STATIC STATE ====================
-
 static char usernameInput[256] = {0};
 static char passwordInput[256] = {0};
 static bool usernameActive = false;
@@ -19,8 +17,6 @@ static bool passwordActive = false;
 static bool showError = false;
 static float errorTimer = 0.0f;
 static std::string errorMsg = "";
-
-// ==================== INIT ====================
 
 void InitLoginScreen() {
     memset(usernameInput, 0, sizeof(usernameInput));
@@ -32,16 +28,13 @@ void InitLoginScreen() {
     errorMsg = "";
 }
 
-// ==================== HELPER: Role String to UserRole ====================
-
 static UserRole roleStringToEnum(const std::string& role) {
     if (role == "Admin")           return ROLE_ADMIN;
     if (role == "Receptionist")    return ROLE_RECEPTIONIST;
-    if (role == "Kitchen Staff")   return ROLE_KITCHEN;
+    if (role == "KitchenStaff")    return ROLE_KITCHEN;
+    if (role == "KitchenStaff")   return ROLE_KITCHEN;  // support both
     return ROLE_RECEPTIONIST;
 }
-
-// ==================== HELPER: Attempt Login ====================
 
 static void attemptLogin() {
     std::string user(usernameInput);
@@ -76,13 +69,9 @@ static void attemptLogin() {
     }
 }
 
-// ==================== DRAW ====================
-
 void DrawLoginScreen() {
-    // Background
     ClearBackground(Color{ 45, 25, 10, 255 });
 
-    // Decorative circles
     DrawCircle(100, 150, 80, Fade(Color{ 200, 80, 30, 255 }, 0.15f));
     DrawCircle(1180, 550, 120, Fade(Color{ 200, 80, 30, 255 }, 0.12f));
     DrawCircle(200, 600, 60, Fade(Color{ 220, 180, 50, 255 }, 0.10f));
@@ -90,7 +79,6 @@ void DrawLoginScreen() {
     DrawCircle(600, 80, 40, Fade(Color{ 200, 80, 30, 255 }, 0.08f));
     DrawCircle(640, 650, 70, Fade(Color{ 220, 180, 50, 255 }, 0.08f));
 
-    // Card
     float cardW = 400, cardH = 380;
     float cardX = (WINDOW_WIDTH - cardW) / 2.0f;
     float cardY = (WINDOW_HEIGHT - cardH) / 2.0f;
@@ -100,7 +88,6 @@ void DrawLoginScreen() {
     DrawRectangleRounded(cardRect, 0.08f, 16, Color{ 252, 248, 240, 255 });
     DrawRectangleRoundedLinesEx(cardRect, 0.08f, 16, 2, COL_ACCENT);
 
-    // Title
     const char* title = "Pizza Point of Sale";
     float titleW = (float)MeasureText(title, FONT_SIZE_TITLE);
     DrawText(title, (int)(cardX + (cardW - titleW) / 2.0f), (int)cardY + 20, FONT_SIZE_TITLE, COL_DARK);
@@ -109,7 +96,6 @@ void DrawLoginScreen() {
     float subW = (float)MeasureText(subtitle, FONT_SIZE_SMALL);
     DrawText(subtitle, (int)(cardX + (cardW - subW) / 2.0f), (int)cardY + 52, FONT_SIZE_SMALL, COL_BORDER);
 
-    // Username input
     Rectangle userRect = { cardX + 40, cardY + 90, 320, 44 };
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
         Vector2 mouse = GetMousePosition();
@@ -118,7 +104,6 @@ void DrawLoginScreen() {
     }
     DrawInput(userRect, "Username", usernameInput, 255, usernameActive, false);
 
-    // Password input
     Rectangle passRect = { cardX + 40, cardY + 170, 320, 44 };
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
         Vector2 mouse = GetMousePosition();
@@ -127,18 +112,15 @@ void DrawLoginScreen() {
     }
     DrawInput(passRect, "Password", passwordInput, 255, passwordActive, true);
 
-    // Forget Password
     const char* forgetText = "Forget Password?";
     float forgetW = (float)MeasureText(forgetText, FONT_SIZE_SMALL);
     DrawText(forgetText, (int)(cardX + cardW - forgetW - 40), (int)cardY + 222, FONT_SIZE_SMALL, Fade(COL_BORDER, 0.7f));
 
-    // LOGIN button
     Rectangle loginBtn = { cardX + 40, cardY + 270, 320, 48 };
     if (DrawButton(loginBtn, "LOGIN", COL_ACCENT, COL_WHITE)) {
         attemptLogin();
     }
 
-    // Error message
     if (showError) {
         errorTimer -= GetFrameTime();
         if (errorTimer <= 0.0f) {
@@ -151,7 +133,6 @@ void DrawLoginScreen() {
         }
     }
 
-    // Keyboard shortcuts
     if (IsKeyPressed(KEY_TAB)) {
         if (usernameActive) { usernameActive = false; passwordActive = true; }
         else if (passwordActive) { passwordActive = false; usernameActive = true; }

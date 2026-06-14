@@ -8,7 +8,6 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
-#include <deque>
 using namespace DB;
 
 static std::vector<Deal> deals;
@@ -16,10 +15,11 @@ static std::vector<MenuItem> menuItems;
 static std::vector<Branch> branches;
 static bool showViewPopup = false, showCreatePopup = false, showEditPopup = false;
 static int selectedDealId = -1;
-static std::deque<bool> itemChecked, branchChecked;
+static std::vector<int> itemChecked, branchChecked;
 static char dealNameInput[100] = {0}, priceInput[32] = {0};
 static float scrollOffset = 0.0f, popupScroll = 0.0f;
 static std::string statusMsg = ""; static float statusTimer = 0.0f;
+static int activeField = 0;
 
 static void reload() { deals = getAllDeals(); menuItems = getMenuItems(getBranchId()); branches = getAllBranches(); }
 static void setStatus(const char* m, bool ok) { statusMsg = m; statusTimer = ok ? 2.5f : 3.0f; }
@@ -29,6 +29,7 @@ void InitDealsPanel() {
     itemChecked.clear(); branchChecked.clear();
     memset(dealNameInput, 0, sizeof(dealNameInput)); memset(priceInput, 0, sizeof(priceInput));
     scrollOffset = popupScroll = 0.0f; statusMsg = ""; statusTimer = 0.0f;
+    activeField = 0;
 }
 
 void DrawDealsPanel() {
@@ -36,7 +37,8 @@ void DrawDealsPanel() {
     DrawText("DEALS MANAGEMENT", (int)px, (int)py, FONT_SIZE_LARGE, COL_DARK);
     if (DrawButton({px + pw - 160, py - 5, 150, 36}, "+ Create Deal", COL_ACCENT, COL_WHITE)) {
         memset(dealNameInput, 0, sizeof(dealNameInput)); memset(priceInput, 0, sizeof(priceInput));
-        itemChecked.assign(menuItems.size(), false); branchChecked.assign(branches.size(), false);
+        itemChecked.assign(menuItems.size(), 0); branchChecked.assign(branches.size(), 0);
+        activeField = 1;
         showCreatePopup = true; showViewPopup = showEditPopup = false; popupScroll = 0.0f;
     }
 
@@ -58,9 +60,10 @@ void DrawDealsPanel() {
         if (DrawButton({ax, y + 2, 55, 28}, "View", COL_IN_PREP, COL_WHITE)) { selectedDealId = d.dealId; showViewPopup = true; showCreatePopup = showEditPopup = false; }
         if (DrawButton({ax + 62, y + 2, 55, 28}, "Edit", COL_COMPLETED, COL_WHITE)) {
             selectedDealId = d.dealId; snprintf(dealNameInput, sizeof(dealNameInput), "%s", d.dealName.c_str()); snprintf(priceInput, sizeof(priceInput), "%.0f", d.totalAmount);
-            itemChecked.assign(menuItems.size(), false); branchChecked.assign(branches.size(), false);
-            for (size_t mi = 0; mi < menuItems.size(); mi++) for (auto& di : d.menuItemIds) if (menuItems[mi].menuItemId == di) itemChecked[mi] = true;
-            for (size_t bi = 0; bi < branches.size(); bi++) for (auto& db : d.branchIds) if (branches[bi].branchId == db) branchChecked[bi] = true;
+            itemChecked.assign(menuItems.size(), 0); branchChecked.assign(branches.size(), 0);
+            for (size_t mi = 0; mi < menuItems.size(); mi++) for (auto& di : d.menuItemIds) if (menuItems[mi].menuItemId == di) itemChecked[mi] = 1;
+            for (size_t bi = 0; bi < branches.size(); bi++) for (auto& db : d.branchIds) if (branches[bi].branchId == db) branchChecked[bi] = 1;
+            activeField = 1;
             showEditPopup = true; showViewPopup = showCreatePopup = false; popupScroll = 0.0f;
         }
     }
@@ -82,40 +85,80 @@ void DrawDealsPanel() {
             DrawText((std::string(avail ? "[x] " : "[ ] ") + branches[bi].branchName).c_str(), (int)px2 + 30, (int)iy, FONT_SIZE_SMALL, avail ? COL_COMPLETED : COL_BORDER); iy += 22;
         }
         if (DrawButton({px2 + pw2 - 100, py2 + ph2 - 45, 80, 30}, "Close", COL_BORDER, COL_DARK)) showViewPopup = false;
+        if (IsKeyPressed(KEY_ESCAPE)) showViewPopup = false;
     }
 
-    // CREATE/EDIT POPUP (shared layout)
-    auto drawDealForm = [&](bool isEdit) {
-        float pw2 = 550, ph2 = 500, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
+    // CREATE/EDIT POPUP
+    if (showCreatePopup || showEditPopup) {
+        DrawPopupOverlay();
+        bool isEdit = showEditPopup;
+        float pw2 = 550, ph2 = 520, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
         DrawCard({px2, py2, pw2, ph2}, isEdit ? "Edit Deal" : "Create Deal", COL_CARD);
+
         float ix = px2 + 20, iy = py2 + 45;
-        DrawText("Deal Name:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); DrawInput({ix + 120, iy - 3, pw2 - 170, 32}, "", dealNameInput, 99, true, false); iy += 40;
-        DrawText("Price:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); DrawInput({ix + 120, iy - 3, pw2 - 170, 32}, "", priceInput, 31, true, false); iy += 40;
+        Vector2 mouse = GetMousePosition();
+
+        // Deal Name
+        DrawText("Deal Name:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle nameRect = {ix + 120, iy - 3, pw2 - 170, 32};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, nameRect)) activeField = 1;
+        DrawInput(nameRect, "", dealNameInput, 99, activeField == 1, false);
+        iy += 40;
+
+        // Price
+        DrawText("Price:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle priceRect = {ix + 120, iy - 3, pw2 - 170, 32};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, priceRect)) activeField = 2;
+        DrawInput(priceRect, "", priceInput, 31, activeField == 2, false);
+        iy += 40;
+
+        // Items checklist
         DrawText("Items:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); iy += 22;
-        float isy = iy; float itemAreaH = 180;
+        float isy = iy; float itemAreaH = 160;
         Rectangle itemClip = {ix, isy, pw2 - 40, itemAreaH};
         float itemTotalH = menuItems.size() * 24.0f;
         DrawScrollbar(itemClip, itemTotalH, popupScroll);
         float iry = isy - popupScroll;
         for (size_t mi = 0; mi < menuItems.size(); mi++) {
             float my = iry + mi * 24.0f; if (my + 24 < isy || my > isy + itemAreaH) continue;
-            DrawCheckbox(ix, my, menuItems[mi].itemName, itemChecked[mi]);
+            bool chk = (itemChecked[mi] != 0);
+            DrawCheckbox(ix, my, menuItems[mi].itemName + " (PKR " + std::to_string((int)menuItems[mi].currentPrice) + ")", chk);
+            itemChecked[mi] = chk ? 1 : 0;
         }
         iy = isy + itemAreaH + 10;
-        DrawText("Branches:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); iy += 22;
-        for (size_t bi = 0; bi < branches.size(); bi++) { DrawCheckbox(ix, iy, branches[bi].branchName, branchChecked[bi]); iy += 22; }
-        iy = py2 + ph2 - 50;
-        if (DrawButton({px2 + 20, iy, 120, 36}, "Save", COL_ACCENT, COL_WHITE)) {
-            std::vector<std::pair<int,int>> selItems; for (size_t mi = 0; mi < menuItems.size(); mi++) if (itemChecked[mi]) selItems.push_back({menuItems[mi].menuItemId, 1});
-            std::vector<int> selBranches; for (size_t bi = 0; bi < branches.size(); bi++) if (branchChecked[bi]) selBranches.push_back(branches[bi].branchId);
-            bool ok = isEdit ? updateDeal(selectedDealId, dealNameInput, atof(priceInput), selItems, selBranches) : createDeal(dealNameInput, atof(priceInput), selItems, selBranches);
-            setStatus(ok ? "Deal saved" : "Error", ok); reload();
-            if (isEdit) showEditPopup = false; else showCreatePopup = false;
-        }
-        if (DrawButton({px2 + pw2 - 140, iy, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) { if (isEdit) showEditPopup = false; else showCreatePopup = false; }
-        if (IsKeyPressed(KEY_ESCAPE)) { if (isEdit) showEditPopup = false; else showCreatePopup = false; }
-    };
 
-    if (showCreatePopup) { DrawPopupOverlay(); drawDealForm(false); }
-    if (showEditPopup) { DrawPopupOverlay(); drawDealForm(true); }
+        // Branches checklist
+        DrawText("Branches:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); iy += 22;
+        for (size_t bi = 0; bi < branches.size(); bi++) {
+            bool chk = (branchChecked[bi] != 0);
+            DrawCheckbox(ix, iy, branches[bi].branchName, chk);
+            branchChecked[bi] = chk ? 1 : 0;
+            iy += 22;
+        }
+
+        // Keyboard
+        if (IsKeyPressed(KEY_TAB)) activeField = (activeField % 2) + 1;
+        if (IsKeyPressed(KEY_ESCAPE)) { showCreatePopup = false; showEditPopup = false; activeField = 0; }
+
+        // Buttons
+        float btnY = py2 + ph2 - 50;
+        if (DrawButton({px2 + 20, btnY, 120, 36}, "Save", COL_ACCENT, COL_WHITE) || IsKeyPressed(KEY_ENTER)) {
+            if (strlen(dealNameInput) > 0 && strlen(priceInput) > 0) {
+                std::vector<std::pair<int,int>> selItems;
+                for (size_t mi = 0; mi < menuItems.size(); mi++)
+                    if (itemChecked[mi] != 0) selItems.push_back({menuItems[mi].menuItemId, 1});
+                std::vector<int> selBranches;
+                for (size_t bi = 0; bi < branches.size(); bi++)
+                    if (branchChecked[bi] != 0) selBranches.push_back(branches[bi].branchId);
+                bool ok = isEdit ? updateDeal(selectedDealId, dealNameInput, atof(priceInput), selItems, selBranches)
+                                 : createDeal(dealNameInput, atof(priceInput), selItems, selBranches);
+                setStatus(ok ? "Deal saved" : "Error", ok);
+                reload();
+                showCreatePopup = false; showEditPopup = false; activeField = 0;
+            }
+        }
+        if (DrawButton({px2 + pw2 - 140, btnY, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) {
+            showCreatePopup = false; showEditPopup = false; activeField = 0;
+        }
+    }
 }

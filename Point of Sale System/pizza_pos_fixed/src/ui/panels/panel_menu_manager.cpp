@@ -32,7 +32,7 @@ static bool typeDropdownOpen = false;
 static std::string statusMessage = "";
 static float statusTimer = 0.0f;
 static float scrollOffset = 0.0f;
-static int activeInputField = 0;
+static int activePopupField = 0;
 
 static std::vector<std::string> typeOptions = {"Pizza", "AddOn", "Coldrink"};
 
@@ -50,7 +50,7 @@ static void clearInputs() {
     selectedTypeIdx = 0;
     catDropdownOpen = false;
     typeDropdownOpen = false;
-    activeInputField = 0;
+    activePopupField = 0;
 }
 
 static void setStatus(const char* msg, bool ok) {
@@ -72,14 +72,12 @@ void DrawMenuManagerPanel() {
     float px = (float)CONTENT_X + 20, py = (float)CONTENT_Y + 20;
     float pw = (float)CONTENT_W - 40, ph = (float)CONTENT_H - 40;
 
-    // Header
     DrawText("MENU ITEMS", (int)px, (int)py, FONT_SIZE_LARGE, COL_DARK);
     if (DrawButton({px + pw - 160, py - 5, 150, 36}, "+ Add New Item", COL_ACCENT, COL_WHITE)) {
         clearInputs();
         showAddPopup = true; showEditPopup = false; showPriceHistoryPopup = false;
     }
 
-    // Table
     float tableY = py + 45;
     std::vector<std::string> headers = {"ID", "Name", "Category", "Type", "Price", "Actions"};
     std::vector<float> cols = {60, 280, 140, 120, 100, 300};
@@ -107,14 +105,13 @@ void DrawMenuManagerPanel() {
             snprintf(nameInput, sizeof(nameInput), "%s", mi.itemName.c_str());
             snprintf(descInput, sizeof(descInput), "%s", mi.description.c_str());
             snprintf(priceInput, sizeof(priceInput), "%.0f", mi.currentPrice);
-            selectedTypeIdx = 0;
             for (int t = 0; t < (int)typeOptions.size(); t++)
                 if (typeOptions[t] == mi.menuItemType) selectedTypeIdx = t;
-            selectedCategoryIdx = 0;
             for (int c = 0; c < (int)categories.size(); c++)
                 if (categories[c].categoryId == mi.categoryId) selectedCategoryIdx = c;
             showEditPopup = true; showAddPopup = false; showPriceHistoryPopup = false;
-            catDropdownOpen = typeDropdownOpen = false;
+            catDropdownOpen = false; typeDropdownOpen = false;
+            activePopupField = 1;
         }
 
         if (DrawButton({ax + 70, y + 2, 120, 28}, "Price History", COL_COMPLETED, COL_WHITE)) {
@@ -125,70 +122,102 @@ void DrawMenuManagerPanel() {
         }
     }
 
-    // Status notification
     if (statusTimer > 0)
         DrawNotification(statusMessage, statusMessage.find("Error") != std::string::npos ? COL_LOW_STOCK : COL_COMPLETED, statusTimer);
 
-    // ==================== ADD POPUP (600x420) ====================
-    if (showAddPopup) {
+    // ==================== ADD / EDIT POPUP ====================
+    if (showAddPopup || showEditPopup) {
         DrawPopupOverlay();
-        float pw2 = 600, ph2 = 420, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
-        DrawCard({px2, py2, pw2, ph2}, "Add New Menu Item", COL_CARD);
-        float ix = px2 + 30, iy = py2 + 55;
+        bool isEdit = showEditPopup;
+        float pw2 = 600, ph2 = 420;
+        float px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
+        DrawCard({px2, py2, pw2, ph2}, isEdit ? "Edit Menu Item" : "Add New Menu Item", COL_CARD);
 
-        auto field = [&](const char* label) { DrawText(label, (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); };
-        Rectangle inR = {ix + 150, iy - 5, pw2 - 210, 36};
+        float ix = px2 + 30;
+        float iy = py2 + 55;
+        Vector2 mouse = GetMousePosition();
 
-        field("Item Name:"); DrawInput(inR, "", nameInput, 255, activeInputField == 1, false); iy += 55;
-        field("Category:");
-        std::vector<std::string> cn; for (auto& c : categories) cn.push_back(c.categoryName);
-        DrawDropdown({ix + 150, iy - 5, pw2 - 210, 36}, "", cn, selectedCategoryIdx, catDropdownOpen); iy += 55;
-        field("Type:"); DrawDropdown({ix + 150, iy - 5, pw2 - 210, 36}, "", typeOptions, selectedTypeIdx, typeDropdownOpen); iy += 55;
-        field("Description:"); DrawInput({ix + 150, iy - 5, pw2 - 210, 36}, "", descInput, 255, activeInputField == 4, false); iy += 55;
-        field("Price (PKR):"); DrawInput({ix + 150, iy - 5, pw2 - 210, 36}, "", priceInput, 31, activeInputField == 5, false);
+        // Field 1: Item Name
+        DrawText("Item Name:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle nameRect = {ix + 150, iy - 5, pw2 - 210, 36};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, nameRect))
+            activePopupField = 1;
+        DrawInput(nameRect, "", nameInput, 255, activePopupField == 1, false);
+        iy += 50;
 
-        if (DrawButton({px2 + pw2 - 280, py2 + ph2 - 55, 120, 36}, "Save", COL_ACCENT, COL_WHITE)) {
+        // Field 2: Category
+        DrawText("Category:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        std::vector<std::string> cn;
+        for (auto& c : categories) cn.push_back(c.categoryName);
+        Rectangle catRect = {ix + 150, iy - 5, pw2 - 210, 36};
+        DrawDropdown(catRect, "", cn, selectedCategoryIdx, catDropdownOpen);
+        iy += 50;
+
+        // Field 3: Type
+        DrawText("Type:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle typeRect = {ix + 150, iy - 5, pw2 - 210, 36};
+        DrawDropdown(typeRect, "", typeOptions, selectedTypeIdx, typeDropdownOpen);
+        iy += 50;
+
+        // Field 4: Description
+        DrawText("Description:", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle descRect = {ix + 150, iy - 5, pw2 - 210, 36};
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, descRect))
+            activePopupField = 2;
+        DrawInput(descRect, "", descInput, 255, activePopupField == 2, false);
+        iy += 50;
+
+        // Field 5: Price
+        DrawText("Price (PKR):", (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK);
+        Rectangle priceRect = {ix + 150, iy - 5, pw2 - 210, 36};
+        if (isEdit) {
+            DrawText(priceInput, (int)ix + 150, (int)iy, FONT_SIZE_SMALL, COL_BORDER);
+        } else {
+            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, priceRect))
+                activePopupField = 3;
+            DrawInput(priceRect, "", priceInput, 31, activePopupField == 3, false);
+        }
+
+        // Keyboard shortcuts
+        if (IsKeyPressed(KEY_TAB)) {
+            activePopupField = (activePopupField % 3) + 1;
+        }
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            showAddPopup = false; showEditPopup = false; clearInputs();
+        }
+
+        // Buttons
+        float btnY = py2 + ph2 - 55;
+        if (DrawButton({px2 + pw2 - 280, btnY, 120, 36}, isEdit ? "Update" : "Save", COL_ACCENT, COL_WHITE)) {
             int cid = (selectedCategoryIdx < (int)categories.size()) ? categories[selectedCategoryIdx].categoryId : 1;
             double pr = atof(priceInput);
             if (strlen(nameInput) > 0 && pr > 0) {
-                bool ok = addMenuItem(nameInput, cid, typeOptions[selectedTypeIdx], descInput, pr);
-                setStatus(ok ? "Item added successfully" : "Error adding item", ok);
+                bool ok;
+                if (isEdit) ok = updateMenuItem(selectedItemId, nameInput, cid, typeOptions[selectedTypeIdx], descInput);
+                else ok = addMenuItem(nameInput, cid, typeOptions[selectedTypeIdx], descInput, pr);
+                setStatus(ok ? (isEdit ? "Item updated" : "Item added") : "Error", ok);
                 reloadData();
-                showAddPopup = false; clearInputs();
+                showAddPopup = false; showEditPopup = false; clearInputs();
             }
         }
-        if (DrawButton({px2 + pw2 - 150, py2 + ph2 - 55, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) { showAddPopup = false; clearInputs(); }
-        if (IsKeyPressed(KEY_ESCAPE)) { showAddPopup = false; clearInputs(); }
-    }
-
-    // ==================== EDIT POPUP (600x420) ====================
-    if (showEditPopup) {
-        DrawPopupOverlay();
-        float pw2 = 600, ph2 = 420, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;
-        DrawCard({px2, py2, pw2, ph2}, "Edit Menu Item", COL_CARD);
-        float ix = px2 + 30, iy = py2 + 55;
-
-        auto field = [&](const char* label) { DrawText(label, (int)ix, (int)iy, FONT_SIZE_SMALL, COL_DARK); };
-        field("Item Name:"); DrawInput({ix + 150, iy - 5, pw2 - 210, 36}, "", nameInput, 255, true, false); iy += 55;
-        field("Category:");
-        std::vector<std::string> cn; for (auto& c : categories) cn.push_back(c.categoryName);
-        DrawDropdown({ix + 150, iy - 5, pw2 - 210, 36}, "", cn, selectedCategoryIdx, catDropdownOpen); iy += 55;
-        field("Type:"); DrawDropdown({ix + 150, iy - 5, pw2 - 210, 36}, "", typeOptions, selectedTypeIdx, typeDropdownOpen); iy += 55;
-        field("Description:"); DrawInput({ix + 150, iy - 5, pw2 - 210, 36}, "", descInput, 255, true, false); iy += 55;
-        field("Price (PKR):"); DrawText(priceInput, (int)ix + 150, (int)iy, FONT_SIZE_SMALL, COL_BORDER);
-
-        if (DrawButton({px2 + pw2 - 280, py2 + ph2 - 55, 120, 36}, "Update", COL_ACCENT, COL_WHITE)) {
-            int cid = (selectedCategoryIdx < (int)categories.size()) ? categories[selectedCategoryIdx].categoryId : 1;
-            bool ok = updateMenuItem(selectedItemId, nameInput, cid, typeOptions[selectedTypeIdx], descInput);
-            setStatus(ok ? "Item updated successfully" : "Error updating item", ok);
-            reloadData();
-            showEditPopup = false; clearInputs();
+        if (DrawButton({px2 + pw2 - 150, btnY, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) {
+            showAddPopup = false; showEditPopup = false; clearInputs();
         }
-        if (DrawButton({px2 + pw2 - 150, py2 + ph2 - 55, 120, 36}, "Cancel", COL_BORDER, COL_DARK)) { showEditPopup = false; clearInputs(); }
-        if (IsKeyPressed(KEY_ESCAPE)) { showEditPopup = false; clearInputs(); }
+        if (IsKeyPressed(KEY_ENTER)) {
+            int cid = (selectedCategoryIdx < (int)categories.size()) ? categories[selectedCategoryIdx].categoryId : 1;
+            double pr = atof(priceInput);
+            if (strlen(nameInput) > 0 && pr > 0) {
+                bool ok;
+                if (isEdit) ok = updateMenuItem(selectedItemId, nameInput, cid, typeOptions[selectedTypeIdx], descInput);
+                else ok = addMenuItem(nameInput, cid, typeOptions[selectedTypeIdx], descInput, pr);
+                setStatus(ok ? (isEdit ? "Item updated" : "Item added") : "Error", ok);
+                reloadData();
+                showAddPopup = false; showEditPopup = false; clearInputs();
+            }
+        }
     }
 
-    // ==================== PRICE HISTORY POPUP (600x460) ====================
+    // ==================== PRICE HISTORY POPUP ====================
     if (showPriceHistoryPopup) {
         DrawPopupOverlay();
         float pw2 = 600, ph2 = 460, px2 = (WINDOW_WIDTH - pw2) / 2, py2 = (WINDOW_HEIGHT - ph2) / 2;

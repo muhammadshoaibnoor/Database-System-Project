@@ -62,12 +62,15 @@ bool addSalaryPayment(const std::string& username, double amount,
     MYSQL* conn = getConn();
     if (!conn) return false;
 
+    std::string dateVal = paymentDate.empty() ? "CURDATE()" : escapeStr(paymentDate);
+    std::string notesVal = notes.empty() ? "NULL" : escapeStr(notes);
+
     std::string sql =
         "INSERT INTO SALARY (UserName, Amount, PaymentDate, Notes) VALUES (" +
         escapeStr(username) + ", " +
         std::to_string(amount) + ", " +
-        escapeStr(paymentDate) + ", " +
-        escapeStr(notes) + ")";
+        dateVal + ", " +
+        notesVal + ")";
 
     return mysql_query(conn, sql.c_str()) == 0;
 }

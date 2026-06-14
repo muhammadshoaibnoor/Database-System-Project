@@ -10,8 +10,6 @@ extern MYSQL* getConn();
 
 namespace DB {
 
-// ==================== HELPER ====================
-
 static std::string escapeStr(const std::string& input) {
     if (input.empty()) return "''";
     MYSQL* conn = getConn();
@@ -23,8 +21,6 @@ static std::string escapeStr(const std::string& input) {
     return result;
 }
 
-// Fills in menuItemIds (from DEAL_ITEM) and branchIds/branchNames
-// (branches where this deal is currently marked available).
 static void populateDealRelations(Deal& d) {
     MYSQL* conn = getConn();
     if (!conn) return;
@@ -64,8 +60,6 @@ static void populateDealRelations(Deal& d) {
     }
 }
 
-// ==================== DEAL FUNCTIONS ====================
-
 std::vector<Deal> getDeals(int branchId) {
     std::vector<Deal> deals;
     MYSQL* conn = getConn();
@@ -92,7 +86,6 @@ std::vector<Deal> getDeals(int branchId) {
         d.dealName    = row[1] ? row[1] : "";
         d.totalAmount = row[2] ? std::stod(row[2]) : 0.0;
         d.isActive    = row[3] ? (std::stoi(row[3]) == 1) : false;
-        // Store branch availability as a flag we check later
         int branchAvail = row[4] ? std::stoi(row[4]) : 0;
         if (branchAvail == 1) {
             populateDealRelations(d);
@@ -107,11 +100,8 @@ std::vector<Deal> getDeals(int branchId) {
 std::vector<Deal> getAvailableDeals(int branchId) {
     std::vector<Deal> all = getDeals(branchId);
     std::vector<Deal> available;
-
     for (auto& deal : all) {
         if (isDealAvailableAtBranch(deal.dealId, branchId)) {
-            // Fetch deal items
-            std::vector<DealItem> items = getDealItems(deal.dealId);
             available.push_back(deal);
         }
     }
@@ -126,7 +116,7 @@ std::vector<DealItem> getDealItems(int dealId) {
     std::string sql =
         "SELECT di.DealItemId, di.DealId, di.MenuItemId, di.Quantity, mi.ItemName "
         "FROM DEAL_ITEM di "
-        "JOIN MENUITEM mi ON di.MenuItemId = mi.MenuItemId "
+        "JOIN menuitem mi ON di.MenuItemId = mi.MenuItemId "
         "WHERE di.DealId = " + std::to_string(dealId) +
         " ORDER BY mi.ItemName";
 
@@ -154,7 +144,6 @@ bool isDealAvailableAtBranch(int dealId, int branchId) {
     MYSQL* conn = getConn();
     if (!conn) return false;
 
-    // Check if deal is assigned to this branch and available
     std::string branchSql =
         "SELECT IsAvailable FROM BRANCH_DEAL "
         "WHERE DealId = " + std::to_string(dealId) +
@@ -172,11 +161,10 @@ bool isDealAvailableAtBranch(int dealId, int branchId) {
     }
     mysql_free_result(branchRes);
 
-    // Check all deal items have sufficient stock
     std::string sql =
         "SELECT mi.InventoryId, di.Quantity, i.Quantity AS StockQty "
         "FROM DEAL_ITEM di "
-        "JOIN MENU_INGREDIENT mi ON di.MenuItemId = mi.MenuItemId "
+        "JOIN menu_ingredient mi ON di.MenuItemId = mi.MenuItemId "
         "JOIN INVENTORY i ON mi.InventoryId = i.InventoryId AND i.BranchId = " +
         std::to_string(branchId) + " "
         "WHERE di.DealId = " + std::to_string(dealId);
@@ -209,7 +197,6 @@ bool createDeal(const std::string& dealName, double totalAmount,
 
     mysql_query(conn, "START TRANSACTION");
 
-    // Insert DEAL
     std::string dealSql =
         "INSERT INTO DEAL (DealName, TotalAmount, IsActive) VALUES (" +
         escapeStr(dealName) + ", " + std::to_string(totalAmount) + ", 1)";
@@ -221,27 +208,22 @@ bool createDeal(const std::string& dealName, double totalAmount,
 
     int dealId = static_cast<int>(mysql_insert_id(conn));
 
-    // Insert DEAL_ITEMs
     for (const auto& item : items) {
         std::string itemSql =
             "INSERT INTO DEAL_ITEM (DealId, MenuItemId, Quantity) VALUES (" +
             std::to_string(dealId) + ", " +
             std::to_string(item.first) + ", " +
             std::to_string(item.second) + ")";
-
         if (mysql_query(conn, itemSql.c_str()) != 0) {
             mysql_query(conn, "ROLLBACK");
             return false;
         }
     }
 
-    // Insert BRANCH_DEALs
-    for (int branchId : branchIds) {
+    for (int brId : branchIds) {
         std::string branchSql =
             "INSERT INTO BRANCH_DEAL (BranchId, DealId, IsAvailable) VALUES (" +
-            std::to_string(branchId) + ", " +
-            std::to_string(dealId) + ", 1)";
-
+            std::to_string(brId) + ", " + std::to_string(dealId) + ", 1)";
         if (mysql_query(conn, branchSql.c_str()) != 0) {
             mysql_query(conn, "ROLLBACK");
             return false;
@@ -260,7 +242,6 @@ bool updateDeal(int dealId, const std::string& dealName, double totalAmount,
 
     mysql_query(conn, "START TRANSACTION");
 
-    // Update DEAL
     std::string updateSql =
         "UPDATE DEAL SET DealName = " + escapeStr(dealName) +
         ", TotalAmount = " + std::to_string(totalAmount) +
@@ -271,33 +252,26 @@ bool updateDeal(int dealId, const std::string& dealName, double totalAmount,
         return false;
     }
 
-    // Delete old DEAL_ITEMs
     mysql_query(conn, ("DELETE FROM DEAL_ITEM WHERE DealId = " + std::to_string(dealId)).c_str());
 
-    // Insert new DEAL_ITEMs
     for (const auto& item : items) {
         std::string itemSql =
             "INSERT INTO DEAL_ITEM (DealId, MenuItemId, Quantity) VALUES (" +
             std::to_string(dealId) + ", " +
             std::to_string(item.first) + ", " +
             std::to_string(item.second) + ")";
-
         if (mysql_query(conn, itemSql.c_str()) != 0) {
             mysql_query(conn, "ROLLBACK");
             return false;
         }
     }
 
-    // Delete old BRANCH_DEALs
     mysql_query(conn, ("DELETE FROM BRANCH_DEAL WHERE DealId = " + std::to_string(dealId)).c_str());
 
-    // Insert new BRANCH_DEALs
-    for (int branchId : branchIds) {
+    for (int brId : branchIds) {
         std::string branchSql =
             "INSERT INTO BRANCH_DEAL (BranchId, DealId, IsAvailable) VALUES (" +
-            std::to_string(branchId) + ", " +
-            std::to_string(dealId) + ", 1)";
-
+            std::to_string(brId) + ", " + std::to_string(dealId) + ", 1)";
         if (mysql_query(conn, branchSql.c_str()) != 0) {
             mysql_query(conn, "ROLLBACK");
             return false;
@@ -324,7 +298,7 @@ bool setBranchDealAvailability(int branchId, int dealId, bool available) {
 
 Deal getDealById(int dealId) {
     Deal d;
-    d.dealId = 0; // Sentinel for "not found"
+    d.dealId = 0;
     MYSQL* conn = getConn();
     if (!conn) return d;
 
@@ -360,6 +334,7 @@ bool toggleDealActive(int dealId, bool isActive) {
 
     return mysql_query(conn, sql.c_str()) == 0;
 }
+
 std::vector<Deal> getAllDeals() {
     std::vector<Deal> deals;
     MYSQL* conn = getConn();

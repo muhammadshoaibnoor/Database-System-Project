@@ -16,6 +16,7 @@ static int staffFilterIdx = 0;
 static char dateFromInp[20] = {0}, dateToInp[20] = {0};
 static bool staffDropOpen = false;
 static float scrollOffset = 0.0f;
+static int activeField = 0; // 1=dateFrom, 2=dateTo
 
 static void reload() {
     employees = getAllEmployees();
@@ -26,19 +27,43 @@ static void reload() {
 void InitShiftsPanel() {
     reload(); staffFilterIdx = 0; staffDropOpen = false;
     memset(dateFromInp, 0, sizeof(dateFromInp)); memset(dateToInp, 0, sizeof(dateToInp));
-    scrollOffset = 0.0f;
+    scrollOffset = 0.0f; activeField = 0;
 }
 
 void DrawShiftsPanel() {
     float px = (float)CONTENT_X + 20, py = (float)CONTENT_Y + 20, pw = (float)CONTENT_W - 40, ph = (float)CONTENT_H - 40;
     DrawText("SHIFT RECORDS", (int)px, (int)py, FONT_SIZE_LARGE, COL_DARK);
 
-    std::vector<std::string> names = {"All Staff"}; for (auto& e : employees) names.push_back(e.firstName + " " + e.lastName);
-    DrawDropdown({px, py + 30, 220, 36}, "Staff:", names, staffFilterIdx, staffDropOpen);
-    DrawText("From:", (int)px + 240, (int)py + 35, FONT_SIZE_SMALL, COL_DARK); DrawInput({px + 290, py + 30, 110, 32}, "", dateFromInp, 19, true, false);
-    DrawText("To:", (int)px + 420, (int)py + 35, FONT_SIZE_SMALL, COL_DARK); DrawInput({px + 450, py + 30, 110, 32}, "", dateToInp, 19, true, false);
-    if (DrawButton({px + 580, py + 30, 70, 32}, "Filter", COL_ACCENT, COL_WHITE)) reload();
-    if (DrawButton({px + 660, py + 30, 70, 32}, "Clear", COL_BORDER, COL_DARK)) { staffFilterIdx = 0; memset(dateFromInp, 0, sizeof(dateFromInp)); memset(dateToInp, 0, sizeof(dateToInp)); reload(); }
+    Vector2 mouse = GetMousePosition();
+
+    // Staff filter dropdown
+    std::vector<std::string> names = {"All Staff"};
+    for (auto& e : employees) names.push_back(e.firstName + " " + e.lastName);
+    if (DrawDropdown({px, py + 30, 220, 36}, "Staff:", names, staffFilterIdx, staffDropOpen)) {
+        reload();
+    }
+
+    // Date From
+    DrawText("From:", (int)px + 240, (int)py + 35, FONT_SIZE_SMALL, COL_DARK);
+    Rectangle fromRect = {px + 290, py + 30, 110, 32};
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, fromRect)) activeField = 1;
+    DrawInput(fromRect, "YYYY-MM-DD", dateFromInp, 19, activeField == 1, false);
+
+    // Date To
+    DrawText("To:", (int)px + 420, (int)py + 35, FONT_SIZE_SMALL, COL_DARK);
+    Rectangle toRect = {px + 450, py + 30, 110, 32};
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && CheckCollisionPointRec(mouse, toRect)) activeField = 2;
+    DrawInput(toRect, "YYYY-MM-DD", dateToInp, 19, activeField == 2, false);
+
+    // Filter / Clear buttons
+    if (DrawButton({px + 580, py + 30, 70, 32}, "Filter", COL_ACCENT, COL_WHITE) || IsKeyPressed(KEY_ENTER)) reload();
+    if (DrawButton({px + 660, py + 30, 70, 32}, "Clear", COL_BORDER, COL_DARK)) {
+        staffFilterIdx = 0;
+        memset(dateFromInp, 0, sizeof(dateFromInp));
+        memset(dateToInp, 0, sizeof(dateToInp));
+        activeField = 0;
+        reload();
+    }
 
     float ty = py + 75;
     std::vector<std::string> hd = {"Staff Name", "Role", "Date", "Clock In", "Clock Out", "Duration"};

@@ -8,10 +8,7 @@
 
 extern MYSQL* getConn();
 
-
 namespace DB {
-
-// ==================== HELPER ====================
 
 static std::string escapeStr(const std::string& input) {
     if (input.empty()) return "''";
@@ -24,8 +21,6 @@ static std::string escapeStr(const std::string& input) {
     return result;
 }
 
-// ==================== ORDER FUNCTIONS ====================
-
 std::string findLeastBusyKitchenStaff(int branchId) {
     MYSQL* conn = getConn();
     if (!conn) return "";
@@ -35,7 +30,7 @@ std::string findLeastBusyKitchenStaff(int branchId) {
         "FROM EMPLOYEE e "
         "LEFT JOIN `ORDER` o ON e.UserName = o.PreparedBy "
         "AND o.Status IN ('Pending', 'In Preparation') "
-        "WHERE e.Role = 'Kitchen Staff' "
+        "WHERE e.Role = 'KitchenStaff' "
         "AND e.BranchId = " + std::to_string(branchId) + " "
         "AND e.IsActive = 1 "
         "GROUP BY e.UserName "
@@ -60,10 +55,8 @@ int createOrder(const std::string& takenBy, const std::string& preparedBy,
     MYSQL* conn = getConn();
     if (!conn) return -1;
 
-    // START TRANSACTION
     mysql_query(conn, "START TRANSACTION");
 
-    // Insert ORDER
     std::stringstream orderSql;
     orderSql << "INSERT INTO `ORDER` (TakenBy, PreparedBy, DiscountId, DiscountAmount, "
              << "OrderDateTime, Status, PaymentStatus, CashTendered, ChangeDue, TotalAmount) VALUES ("
@@ -83,9 +76,7 @@ int createOrder(const std::string& takenBy, const std::string& preparedBy,
 
     int orderId = static_cast<int>(mysql_insert_id(conn));
 
-    // Insert ORDER_ITEMs and deduct inventory
     for (const auto& item : items) {
-        // Insert order item
         std::stringstream itemSql;
         itemSql << "INSERT INTO ORDER_ITEM (OrderId, MenuItemId, DealId, Quantity, UnitPrice) VALUES ("
                 << orderId << ", "
@@ -99,13 +90,11 @@ int createOrder(const std::string& takenBy, const std::string& preparedBy,
             return -1;
         }
 
-        // Deduct inventory
         if (item.isDeal) {
-            // Deduct all deal items
             std::string dealSql =
                 "SELECT di.MenuItemId, di.Quantity, mi.InventoryId "
                 "FROM DEAL_ITEM di "
-                "JOIN MENU_INGREDIENT mi ON di.MenuItemId = mi.MenuItemId "
+                "JOIN menu_ingredient mi ON di.MenuItemId = mi.MenuItemId "
                 "WHERE di.DealId = " + std::to_string(item.dealId);
 
             if (mysql_query(conn, dealSql.c_str()) == 0) {
@@ -116,22 +105,15 @@ int createOrder(const std::string& takenBy, const std::string& preparedBy,
                         int invId = drow[2] ? std::stoi(drow[2]) : -1;
                         double qtyNeeded = (drow[1] ? std::stod(drow[1]) : 1.0) * item.quantity;
                         if (invId > 0) {
-                            std::string deductSql =
-                                "UPDATE INVENTORY SET Quantity = Quantity - " +
-                                std::to_string(qtyNeeded) +
-                                " WHERE InventoryId = " + std::to_string(invId);
-                            mysql_query(conn, deductSql.c_str());
+                            mysql_query(conn, ("UPDATE INVENTORY SET Quantity = Quantity - " + std::to_string(qtyNeeded) + " WHERE InventoryId = " + std::to_string(invId)).c_str());
                         }
                     }
                     mysql_free_result(dealRes);
                 }
             }
         } else {
-            // Deduct single menu item ingredients
             std::string ingSql =
-                "SELECT InventoryId FROM MENU_INGREDIENT WHERE MenuItemId = " +
-                std::to_string(item.menuItemId);
-
+                "SELECT InventoryId FROM menu_ingredient WHERE MenuItemId = " + std::to_string(item.menuItemId);
             if (mysql_query(conn, ingSql.c_str()) == 0) {
                 MYSQL_RES* ingRes = mysql_store_result(conn);
                 if (ingRes) {
@@ -139,11 +121,7 @@ int createOrder(const std::string& takenBy, const std::string& preparedBy,
                     while ((irow = mysql_fetch_row(ingRes))) {
                         int invId = irow[0] ? std::stoi(irow[0]) : -1;
                         if (invId > 0) {
-                            std::string deductSql =
-                                "UPDATE INVENTORY SET Quantity = Quantity - " +
-                                std::to_string(item.quantity) +
-                                " WHERE InventoryId = " + std::to_string(invId);
-                            mysql_query(conn, deductSql.c_str());
+                            mysql_query(conn, ("UPDATE INVENTORY SET Quantity = Quantity - " + std::to_string(item.quantity) + " WHERE InventoryId = " + std::to_string(invId)).c_str());
                         }
                     }
                     mysql_free_result(ingRes);
@@ -152,7 +130,6 @@ int createOrder(const std::string& takenBy, const std::string& preparedBy,
         }
     }
 
-    // COMMIT
     mysql_query(conn, "COMMIT");
     return orderId;
 }
@@ -248,7 +225,7 @@ std::vector<OrderItem> getOrderItems(int orderId) {
         "SELECT oi.OrderItemId, oi.OrderId, oi.MenuItemId, oi.DealId, oi.Quantity, "
         "oi.UnitPrice, mi.ItemName, d.DealName "
         "FROM ORDER_ITEM oi "
-        "LEFT JOIN MENU_ITEM mi ON oi.MenuItemId = mi.MenuItemId "
+        "LEFT JOIN menuitem mi ON oi.MenuItemId = mi.MenuItemId "
         "LEFT JOIN DEAL d ON oi.DealId = d.DealId "
         "WHERE oi.OrderId = " + std::to_string(orderId);
 
@@ -325,22 +302,19 @@ bool cancelOrder(int orderId) {
     MYSQL* conn = getConn();
     if (!conn) return false;
 
-    // Check status is Pending
     Order o = getOrderById(orderId);
-    if (o.status != "Pending") return false;
+    if (o.status != "Pending" && o.status != "PENDING") return false;
 
     mysql_query(conn, "START TRANSACTION");
 
-    // Restore inventory — reverse the deductions
     std::vector<OrderItem> items = getOrderItems(orderId);
     for (const auto& item : items) {
         if (item.dealId > 0) {
             std::string dealSql =
                 "SELECT di.MenuItemId, di.Quantity, mi.InventoryId "
                 "FROM DEAL_ITEM di "
-                "JOIN MENU_INGREDIENT mi ON di.MenuItemId = mi.MenuItemId "
+                "JOIN menu_ingredient mi ON di.MenuItemId = mi.MenuItemId "
                 "WHERE di.DealId = " + std::to_string(item.dealId);
-
             if (mysql_query(conn, dealSql.c_str()) == 0) {
                 MYSQL_RES* dealRes = mysql_store_result(conn);
                 if (dealRes) {
@@ -349,21 +323,14 @@ bool cancelOrder(int orderId) {
                         int invId = drow[2] ? std::stoi(drow[2]) : -1;
                         double qty = (drow[1] ? std::stod(drow[1]) : 1.0) * item.quantity;
                         if (invId > 0) {
-                            std::string restoreSql =
-                                "UPDATE INVENTORY SET Quantity = Quantity + " +
-                                std::to_string(qty) +
-                                " WHERE InventoryId = " + std::to_string(invId);
-                            mysql_query(conn, restoreSql.c_str());
+                            mysql_query(conn, ("UPDATE INVENTORY SET Quantity = Quantity + " + std::to_string(qty) + " WHERE InventoryId = " + std::to_string(invId)).c_str());
                         }
                     }
                     mysql_free_result(dealRes);
                 }
             }
         } else if (item.menuItemId > 0) {
-            std::string ingSql =
-                "SELECT InventoryId FROM MENU_INGREDIENT WHERE MenuItemId = " +
-                std::to_string(item.menuItemId);
-
+            std::string ingSql = "SELECT InventoryId FROM menu_ingredient WHERE MenuItemId = " + std::to_string(item.menuItemId);
             if (mysql_query(conn, ingSql.c_str()) == 0) {
                 MYSQL_RES* ingRes = mysql_store_result(conn);
                 if (ingRes) {
@@ -371,11 +338,7 @@ bool cancelOrder(int orderId) {
                     while ((irow = mysql_fetch_row(ingRes))) {
                         int invId = irow[0] ? std::stoi(irow[0]) : -1;
                         if (invId > 0) {
-                            std::string restoreSql =
-                                "UPDATE INVENTORY SET Quantity = Quantity + " +
-                                std::to_string(item.quantity) +
-                                " WHERE InventoryId = " + std::to_string(invId);
-                            mysql_query(conn, restoreSql.c_str());
+                            mysql_query(conn, ("UPDATE INVENTORY SET Quantity = Quantity + " + std::to_string(item.quantity) + " WHERE InventoryId = " + std::to_string(invId)).c_str());
                         }
                     }
                     mysql_free_result(ingRes);
@@ -384,7 +347,6 @@ bool cancelOrder(int orderId) {
         }
     }
 
-    // Update status
     std::string updateSql =
         "UPDATE `ORDER` SET Status = 'Cancelled', PaymentStatus = 'Refunded' "
         "WHERE OrderId = " + std::to_string(orderId);
@@ -403,20 +365,17 @@ bool modifyOrder(int orderId, const std::vector<CartItem>& newItems,
     MYSQL* conn = getConn();
     if (!conn) return false;
 
-    // Verify order is Pending
     Order o = getOrderById(orderId);
-    if (o.status != "Pending") return false;
+    if (o.status != "Pending" && o.status != "PENDING") return false;
 
     mysql_query(conn, "START TRANSACTION");
 
-    // Restore old inventory
     std::vector<OrderItem> oldItems = getOrderItems(orderId);
     for (const auto& item : oldItems) {
         if (item.dealId > 0) {
             std::string dealSql =
                 "SELECT di.MenuItemId, di.Quantity, mi.InventoryId "
-                "FROM DEAL_ITEM di "
-                "JOIN MENU_INGREDIENT mi ON di.MenuItemId = mi.MenuItemId "
+                "FROM DEAL_ITEM di JOIN menu_ingredient mi ON di.MenuItemId = mi.MenuItemId "
                 "WHERE di.DealId = " + std::to_string(item.dealId);
             if (mysql_query(conn, dealSql.c_str()) == 0) {
                 MYSQL_RES* dr = mysql_store_result(conn);
@@ -433,7 +392,7 @@ bool modifyOrder(int orderId, const std::vector<CartItem>& newItems,
                 }
             }
         } else if (item.menuItemId > 0) {
-            std::string ingSql = "SELECT InventoryId FROM MENU_INGREDIENT WHERE MenuItemId = " + std::to_string(item.menuItemId);
+            std::string ingSql = "SELECT InventoryId FROM menu_ingredient WHERE MenuItemId = " + std::to_string(item.menuItemId);
             if (mysql_query(conn, ingSql.c_str()) == 0) {
                 MYSQL_RES* ir = mysql_store_result(conn);
                 if (ir) {
@@ -450,10 +409,8 @@ bool modifyOrder(int orderId, const std::vector<CartItem>& newItems,
         }
     }
 
-    // Delete old order items
     mysql_query(conn, ("DELETE FROM ORDER_ITEM WHERE OrderId = " + std::to_string(orderId)).c_str());
 
-    // Update order totals
     std::stringstream updateSql;
     updateSql << "UPDATE `ORDER` SET DiscountAmount = " << newDiscountAmount
               << ", TotalAmount = " << newTotal
@@ -463,7 +420,6 @@ bool modifyOrder(int orderId, const std::vector<CartItem>& newItems,
         return false;
     }
 
-    // Insert new items and deduct inventory (same as createOrder logic)
     for (const auto& item : newItems) {
         std::stringstream itemSql;
         itemSql << "INSERT INTO ORDER_ITEM (OrderId, MenuItemId, DealId, Quantity, UnitPrice) VALUES ("
@@ -480,7 +436,7 @@ bool modifyOrder(int orderId, const std::vector<CartItem>& newItems,
         if (item.isDeal) {
             std::string dealSql =
                 "SELECT di.MenuItemId, di.Quantity, mi.InventoryId "
-                "FROM DEAL_ITEM di JOIN MENU_INGREDIENT mi ON di.MenuItemId = mi.MenuItemId "
+                "FROM DEAL_ITEM di JOIN menu_ingredient mi ON di.MenuItemId = mi.MenuItemId "
                 "WHERE di.DealId = " + std::to_string(item.dealId);
             if (mysql_query(conn, dealSql.c_str()) == 0) {
                 MYSQL_RES* dr = mysql_store_result(conn);
@@ -497,7 +453,7 @@ bool modifyOrder(int orderId, const std::vector<CartItem>& newItems,
                 }
             }
         } else {
-            std::string ingSql = "SELECT InventoryId FROM MENU_INGREDIENT WHERE MenuItemId = " + std::to_string(item.menuItemId);
+            std::string ingSql = "SELECT InventoryId FROM menu_ingredient WHERE MenuItemId = " + std::to_string(item.menuItemId);
             if (mysql_query(conn, ingSql.c_str()) == 0) {
                 MYSQL_RES* ir = mysql_store_result(conn);
                 if (ir) {

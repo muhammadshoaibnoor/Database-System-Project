@@ -27,11 +27,13 @@ void RefreshKitchenQueue() {
     activeCount = 0;
     auto orders = getOrdersByKitchenStaff(getUsername(), "");
     for (auto& o : orders) {
+        // Skip cancelled orders
         if (o.status == "Cancelled") continue;
         OrderCard oc;
         oc.order = o;
         oc.items = getOrderItems(o.orderId);
         orderCards.push_back(oc);
+        // Count active (Pending or In Preparation)
         if (o.status == "Pending" || o.status == "In Preparation") activeCount++;
     }
 }
@@ -47,21 +49,17 @@ void InitKitchenQueuePanel() {
 void DrawKitchenQueuePanel() {
     float px = (float)CONTENT_X + 20, py = (float)CONTENT_Y + 20, pw = (float)CONTENT_W - 40, ph = (float)CONTENT_H - 40;
 
-    // Title
     const char* title = "KITCHEN DASHBOARD";
     float tw = (float)MeasureText(title, FONT_SIZE_TITLE);
     DrawText(title, (int)(CONTENT_X + (CONTENT_W - tw) / 2), (int)py, FONT_SIZE_TITLE, COL_ACCENT);
 
-    // Active count badge
     char badge[32]; snprintf(badge, sizeof(badge), "Active Orders: %d", activeCount);
     float bw = (float)MeasureText(badge, FONT_SIZE_SMALL);
     DrawRectangleRounded({px + pw - bw - 30, py + 5, bw + 20, 28}, 0.2f, 8, activeCount > 0 ? COL_LOW_STOCK : COL_COMPLETED);
     DrawText(badge, (int)(px + pw - bw - 20), (int)py + 9, FONT_SIZE_SMALL, COL_WHITE);
 
-    // Refresh button
     if (DrawButton({px + pw - 100, py + 40, 90, 28}, "Refresh", COL_ACCENT, COL_WHITE)) RefreshKitchenQueue();
 
-    // Cards area
     float cy = py + 80;
     float areaH = ph - 90;
     float cardH = 135;
@@ -75,21 +73,23 @@ void DrawKitchenQueuePanel() {
 
         auto& oc = orderCards[i];
         auto& o = oc.order;
-        Color cardBg = (o.status == "Pending") ? ColorAlphaBlend(COL_CARD, Fade(COL_PENDING, 0.08f), WHITE)
-                     : (o.status == "In Preparation") ? ColorAlphaBlend(COL_CARD, Fade(COL_IN_PREP, 0.08f), WHITE) : COL_CARD;
+
+        // Normalize status for display
+        std::string st = o.status;
+
+        Color cardBg = COL_CARD;
+        if (st == "Pending") cardBg = ColorAlphaBlend(COL_CARD, Fade(COL_PENDING, 0.08f), WHITE);
+        else if (st == "In Preparation") cardBg = ColorAlphaBlend(COL_CARD, Fade(COL_IN_PREP, 0.08f), WHITE);
 
         DrawCard({px, y, pw, cardH}, "", cardBg);
 
-        // Order header
         char hdr[128]; snprintf(hdr, sizeof(hdr), "Order #%d", o.orderId);
         DrawText(hdr, (int)px + 15, (int)y + 8, FONT_SIZE_NORMAL, COL_DARK);
         char info[128]; snprintf(info, sizeof(info), "Taken by: %s | %s", o.takenBy.c_str(), o.orderDateTime.c_str());
         DrawText(info, (int)px + 15, (int)y + 30, FONT_SIZE_SMALL, COL_BORDER);
 
-        // Status badge
-        DrawStatusBadge(px + pw - 160, y + 8, o.status);
+        DrawStatusBadge(px + pw - 160, y + 8, st);
 
-        // Items list
         std::string itemsStr = "Items: ";
         for (size_t j = 0; j < oc.items.size(); j++) {
             std::string nm = oc.items[j].itemName.empty() ? oc.items[j].dealName : oc.items[j].itemName;
@@ -101,21 +101,21 @@ void DrawKitchenQueuePanel() {
         if (itemsStr.length() > 100) itemsStr = itemsStr.substr(0, 97) + "...";
         DrawText(itemsStr.c_str(), (int)px + 15, (int)y + 55, FONT_SIZE_SMALL, COL_DARK);
 
-        // Action button
         float btnY = y + cardH - 38;
-        if (o.status == "Pending") {
+
+        if (st == "Pending") {
             if (DrawButton({px + 15, btnY, 150, 32}, "Accept Order", COL_PENDING, COL_WHITE)) {
                 bool ok = updateOrderStatus(o.orderId, "In Preparation");
                 setStatus(ok ? "Order accepted!" : "Error", ok);
                 RefreshKitchenQueue();
             }
-        } else if (o.status == "In Preparation") {
-            if (DrawButton({px + 15, btnY, 180, 32}, "Mark as Prepared", COL_COMPLETED, COL_WHITE)) {
+        } else if (st == "In Preparation") {
+            if (DrawButton({px + 15, btnY, 180, 32}, "Mark as Complete", COL_COMPLETED, COL_WHITE)) {
                 bool ok = updateOrderStatus(o.orderId, "Completed");
                 setStatus(ok ? "Order completed!" : "Error", ok);
                 RefreshKitchenQueue();
             }
-        } else if (o.status == "Completed") {
+        } else if (st == "Completed") {
             DrawText("Completed", (int)px + 15, (int)btnY + 5, FONT_SIZE_SMALL, COL_COMPLETED);
         }
     }

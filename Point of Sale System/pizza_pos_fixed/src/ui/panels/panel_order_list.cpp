@@ -48,12 +48,19 @@ void DrawOrderListPanel() {
         DrawText(tot,(int)px+15,(int)y+30,FONT_SIZE_NORMAL,COL_ACCENT);
         DrawStatusBadge(px+pw-180,y+8,o.status);
         float by=y+125-40;
-        if(o.status=="Pending"){
+
+        // Normalize status for comparison (handle PENDING vs Pending)
+        std::string st = o.status;
+        if (st == "Pending" || st == "PENDING") {
             if(DrawButton({px+15,by,90,30},"Modify",COL_PENDING,COL_WHITE)){SetOrderFormForModification(o.orderId);gRecepActivePanel=RPANEL_NEW_ORDER;}
             if(DrawButton({px+115,by,80,30},"Cancel",COL_LOW_STOCK,COL_WHITE)){cancelOrderId=o.orderId;showCancelDlg=true;}
-        }else if(o.status=="In Preparation") DrawText("Locked",(int)px+15,(int)by+5,FONT_SIZE_SMALL,COL_BORDER);
-        else if(o.status=="Completed"){if(DrawButton({px+15,by,120,30},"View Details",COL_BORDER,COL_DARK)){viewOrderId=o.orderId;viewItems=getOrderItems(o.orderId);showViewPopup=true;}}
-        else DrawText("Refunded",(int)px+15,(int)by+5,FONT_SIZE_SMALL,COL_LOW_STOCK);
+        } else if (st == "In Preparation" || st == "IN_PREPARATION") {
+            DrawText("Locked",(int)px+15,(int)by+5,FONT_SIZE_SMALL,COL_BORDER);
+        } else if (st == "Completed" || st == "COMPLETED") {
+            if(DrawButton({px+15,by,120,30},"View Details",COL_BORDER,COL_DARK)){viewOrderId=o.orderId;viewItems=getOrderItems(o.orderId);showViewPopup=true;}
+        } else {
+            DrawText("Refunded",(int)px+15,(int)by+5,FONT_SIZE_SMALL,COL_LOW_STOCK);
+        }
     }
 
     if(statusTimer>0)DrawNotification(statusMsg,statusMsg.find("Error")!=std::string::npos?COL_LOW_STOCK:COL_COMPLETED,statusTimer);
